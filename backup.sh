@@ -34,7 +34,7 @@ do
         echo -e "\n\tBeginning backup process for server $i.\n\tCreating temporary directory structure.";
         mkdir -p $backupdir/backup-$i/mysql;
         echo -e "\tLocating and dumping any relevant databases."
-        mysql -sse "show databases like \"$servername\_%\"" | while read db; do mysqldump $db > $backupdir/backup-$i/mysql/$db.sql; done
+        mysql -sse "show databases like \"$i\_%\"" | while read db; do mysqldump $db > $backupdir/backup-$i/mysql/$db.sql; done
         echo -e "\tCopying over the server files.";
         rsync -avP $serverdir/$i $backupdir/backup-$i/ &>/dev/null;
         echo -e "\tCreating archive.";
