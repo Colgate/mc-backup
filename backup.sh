@@ -1,60 +1,48 @@
 #! /bin/bash
 
-echo -e '['$(date +"%m-%d-%Y")']'
-for server in $(ls /servers/);
-    do
-    if [ ! -d /backups/$server ];
-        then 
-            mkdir /backups/$server;
-    fi;
+#############################################################
+# name:        MC-Backup                                    # 
+# author:      Colgate                                      #
+# description: Full backup script for bukkit servers        #
+#############################################################  
 
-    if [ ! -d /backups/tmp ];
-        then 
-            mkdir /backups/tmp;
-    fi;
+######## Configuration variables go here ########
 
-    echo 'Starting backup for '$server
+# Location of your server(s). [Default = /servers]
+serverdir=/servers
 
-    datetest=$(find /backups/$server -mtime 6 | wc -l)
-    curtime=$(date +"%Y-%m-%d")
-    if [ $datetest -gt 0 ];
-        then 
-            echo -e '['$(date +"%r")'] Removing old backups';
-            find /backups/ -mtime 6 -print -delete;
-    fi;
+# Directory you will keep your backup files [Default = /backups]
+backupdir=/backups
 
-    echo -e '['$(date +"%r")'] Storing MySQL Databases...'
-    for db in $(mysql -e 'show databases;' -B | grep $server);
-        do
-            echo -e '['$(date +"%r")'] Dumping '$db;
-            mysqldump $db > /backups/tmp/$db.sql
-    done;
-
-    echo -e '['$(date +"%r")'] Copying temporary files...'
-    cp -r /servers/$server /backups/tmp;
-    cd /backups/tmp;
-
-    echo -e '['$(date +"%r")'] Creating archive...'
-    tar cf /backups/$server/$server.$curtime.tar *;
-    if [ ! -f /backups/$server/$server.$curtime.tar.gz ];
-        then 
-            gzip /backups/$server/$server.$curtime.tar
-        else
-            echo -e '['$(date +"%r")'] $server.'$curtime'.tar.gz already exists. Skipping.';
-            touch /backups/$server/.skipped
-            rm -f /backups/$server/$server.$curtime.tar;
-    fi;
-    echo -e '['$(date +"%r")'] Removing temporary files...';
-    rm -rf /backups/tmp;
-
-    if [ ! -f /backups/$server/$server.$curtime.tar.gz ] || [ -f /backups/$server/.skipped ];
-        then
-            echo -e '['$(date +"%r")'] Backup was unsuccessfully created';
-            rm -f /backups/$server/.skipped
-        else
-            echo -e '['$(date +"%r")'] Backup for '$server' on '$(date +"%m-%d-%Y")' was successfully created';
-    fi;
-
-done;
+# Number of days to keep backups for. [Default = 7]
+retain=7
 
 
+######## Don't modify below this line unless you really know what you're doing. Or if you like breaking things. ########
+
+today=$(date +"%m-%d-%Y")
+
+echo -e "\nBackup run started for $today\n\n\tRemoving backups older than $retain days";
+find $backupdir -type f -name "*.tar.gz" -mtime $((retain - 1)) -exec echo -e "\tRemoving {}" \; -delete;
+
+for i in $(/bin/ls $serverdir); 
+do
+    #Verify everything looks proper before beginning.
+    [[ ! -d $backupdir ]] && { echo -e "\tBackup directory does not exist. Creating."; mkdir -p $backupdir; }
+    [[ ! -d $backupdir/$i ]] && { echo -e "\tBackup location for this server does not exist. Creating."; mkdir -p $backupdir/$i; }
+    [[ -e $backupdir/$i/backup_$i-$today.tar.gz ]] && echo -e "\n\tIt looks like a backup matching today's date was already created for $i. Cannot proceed." || {
+        echo -e "\n\tBeginning backup process for server $i.\n\tCreating temporary directory structure.";
+        mkdir -p $backupdir/backup-$i/mysql;
+        echo -e "\tLocating and dumping any relevant databases."
+        mysql -sse "show databases like \"$servername\_%\"" | while read db; do mysqldump $db > $backupdir/backup-$i/mysql/$db.sql; done
+        echo -e "\tCopying over the server files.";
+        rsync -avP $serverdir/$i $backupdir/backup-$i/ &>/dev/null;
+        echo -e "\tCreating archive.";
+        tar -zcf $backupdir/$i/backup_$i-$today.tar.gz -C $backupdir backup-$i
+        echo -e "\tCleaning up temporary directory.";
+        rm -rf $backupdir/backup-$i/
+        echo -e "\n\tDone backing up $i. File was created at $backupdir/$i/backup_$i-$today.tar.gz."
+    }
+done
+
+echo -e "\nBackup run completed for $today."
